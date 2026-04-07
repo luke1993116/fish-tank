@@ -886,10 +886,10 @@ function spawnBodies(){
   SPAWN.forEach((id,i)=>{
     const def=PROPS.find(p=>p.id===id); if(!def)return;
     const pw=def.w*sc, ph=def.h*sc;
-    // Drop from just below screen, random X
-    const sx=W*0.08+Math.random()*W*0.84;
-    const sy=H+ph*(0.5+Math.random()*0.6)+i*ph*0.2;
-    const opts={restitution:def.rest,friction:def.fric,frictionAir:0.022,density:def.mass*0.002,angle:(Math.random()-.5)*0.5};
+    const sx = W*0.05 + Math.random()*W*0.9;
+    // Start in bottom 40% of screen, staggered so they tumble and settle
+    const sy = H*0.55 + Math.random()*H*0.3 - i*ph*0.1;
+    const opts={restitution:def.rest,friction:def.fric,frictionAir:0.022,density:def.mass*0.002,angle:(Math.random()-.5)*0.6};
     let b;
     if(def.shape==='circle') b=Bodies.circle(sx,sy,Math.min(pw,ph)*0.46,opts);
     else b=Bodies.rectangle(sx,sy,pw*0.84,ph*0.7,opts);
