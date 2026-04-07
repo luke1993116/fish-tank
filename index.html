@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="水族箱">
+<meta name="theme-color" content="#071420">
+<link rel="manifest" href="manifest.json">
+<title>水族箱</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;background:#071420;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;}
+#c{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block;}
+#ui{position:fixed;top:0;left:0;right:0;z-index:10;pointer-events:none;}
+#topbar{display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top,44px) + 6px) 16px 8px;}
+#title{font-size:15px;font-weight:600;color:rgba(140,210,240,0.7);letter-spacing:.5px;font-family:-apple-system,sans-serif;}
+.btns{display:flex;gap:8px;pointer-events:all;}
+.btn{width:38px;height:38px;border-radius:50%;border:1px solid rgba(0,150,200,0.25);background:rgba(0,60,100,0.55);color:rgba(140,210,240,0.8);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px);transition:all .15s;}
+.btn:active{transform:scale(.88);}
+.btn.on{background:rgba(0,140,160,0.6);color:#88ffee;}
+#badge{position:fixed;bottom:calc(env(safe-area-inset-bottom,34px)+12px);left:50%;transform:translateX(-50%);background:rgba(0,15,30,0.65);border-radius:20px;padding:5px 18px;font-size:11px;color:rgba(100,200,240,0.7);pointer-events:none;white-space:nowrap;z-index:10;backdrop-filter:blur(10px);border:1px solid rgba(0,150,200,0.15);font-family:-apple-system,sans-serif;}
+#gyro-prompt{position:fixed;inset:0;background:rgba(0,8,20,.85);display:flex;align-items:flex-end;justify-content:center;padding-bottom:calc(env(safe-area-inset-bottom,34px)+24px);z-index:50;opacity:0;pointer-events:none;transition:opacity .3s;}
+#gyro-prompt.show{opacity:1;pointer-events:all;}
+.gp-card{background:#0a1e30;border-radius:22px;padding:28px 24px 20px;width:calc(100% - 32px);max-width:380px;text-align:center;border:1px solid rgba(0,150,200,0.25);}
+.gp-icon{font-size:44px;margin-bottom:10px;}
+.gp-title{font-size:20px;font-weight:700;color:#a0d8f0;margin-bottom:8px;font-family:-apple-system,sans-serif;}
+.gp-desc{font-size:13px;color:rgba(100,180,220,0.55);margin-bottom:20px;line-height:1.6;font-family:-apple-system,sans-serif;}
+.gp-btn{width:100%;padding:14px;border-radius:14px;border:none;background:rgba(0,140,180,0.8);color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:10px;font-family:-apple-system,sans-serif;}
+.gp-skip{background:none;border:none;color:rgba(100,180,220,0.35);font-size:13px;cursor:pointer;padding:8px;font-family:-apple-system,sans-serif;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="topbar">
+    <span id="title">🐠 水族箱</span>
+    <div class="btns">
+      <button class="btn" id="gyroBtn">📱</button>
+      <button class="btn" id="resetBtn">🔄</button>
+    </div>
+  </div>
+</div>
+<div id="badge">触摸聚拢 · 摇晃散开</div>
+<div id="gyro-prompt">
+  <div class="gp-card">
+    <div class="gp-icon">🌊</div>
+    <div class="gp-title">开启陀螺仪</div>
+    <div class="gp-desc">倾斜手机让摆件在水中漂浮<br>触摸形成水流 · 摇晃两下散开</div>
+    <button class="gp-btn" id="gyroAllowBtn">开启陀螺仪</button>
+    <button class="gp-skip" id="gyroSkipBtn">稍后</button>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+'use strict';
+const {Engine,Runner,Bodies,Body,World,Events} = Matter;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W,H,dpr;
+function resize(){
+  dpr=window.devicePixelRatio||1; W=window.innerWidth; H=window.innerHeight;
+  canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+}
+resize();
+
+const engine = Engine.create({gravity:{x:0,y:1,scale:0.0015}});
+Runner.run(Runner.create(), engine);
+
+// ── Polyfill: rounded rect helper (avoids roundRect API compatibility issues) ──
+function rr(cx,x,y,w,h,r){
+  r=Math.min(r,Math.abs(w)/2,Math.abs(h)/2);
+  cx.beginPath();
+  cx.moveTo(x+r,y);
+  cx.lineTo(x+w-r,y); cx.arcTo(x+w,y,x+w,y+r,r);
+  cx.lineTo(x+w,y+h-r); cx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  cx.lineTo(x+r,y+h); cx.arcTo(x,y+h,x,y+h-r,r);
+  cx.lineTo(x,y+r); cx.arcTo(x,y,x+r,y,r);
+  cx.closePath();
+}
+
+// ═══════════════════════════════════════════
+//  ORNAMENT DRAWING FUNCTIONS
+//  All draw(ctx, w, h) — centered at 0,0
+// ═══════════════════════════════════════════
+
+// ── Cute helpers ──────────────────────────
+function cuteEye(cx,x,y,r){
+  cx.fillStyle='#fff'; cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#1a1a2e'; cx.beginPath(); cx.arc(x+r*.25,y+r*.1,r*.55,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#fff'; cx.beginPath(); cx.arc(x+r*.4,y-r*.05,r*.2,0,Math.PI*2); cx.fill();
+}
+function cuteBlush(cx,x,y,r){
+  cx.fillStyle='rgba(255,140,140,0.45)'; cx.beginPath(); cx.ellipse(x,y,r,r*.6,0,0,Math.PI*2); cx.fill();
+}
+function cuteSmile(cx,x,y,r,lw){
+  cx.strokeStyle='#3a1a2a'; cx.lineWidth=lw||2; cx.lineCap='round';
+  cx.beginPath(); cx.arc(x,y,r,0.1,Math.PI-0.1); cx.stroke();
+}
+function cuteOutline(cx,col,lw){ cx.strokeStyle=col||'rgba(0,0,0,0.18)'; cx.lineWidth=lw||3; cx.stroke(); }
+
+// 1. CUTE COCONUT HUT — chubby little beach house with a face
+function drawCoconutHut(cx,w,h){
+  // Base platform — sandy stone
+  const baseG=cx.createLinearGradient(0,h*.3,0,h*.5);
+  baseG.addColorStop(0,'#c8a870'); baseG.addColorStop(1,'#a88850');
+  cx.fillStyle=baseG; cx.beginPath(); cx.ellipse(0,h*.44,w*.44,h*.08,0,0,Math.PI*2); cx.fill();
+
+  // Main body — round chubby cylinder
+  const bodyG=cx.createRadialGradient(-w*.1,-h*.05,0,0,0,w*.5);
+  bodyG.addColorStop(0,'#ffe090'); bodyG.addColorStop(.5,'#f0c060'); bodyG.addColorStop(1,'#c89030');
+  cx.fillStyle=bodyG;
+  cx.beginPath(); cx.ellipse(0,h*.1,w*.38,h*.38,0,0,Math.PI*2); cx.fill();
+  cx.strokeStyle='rgba(160,100,20,0.3)'; cx.lineWidth=3; cx.stroke();
+
+  // Bamboo stripes
+  cx.save(); cx.beginPath(); cx.ellipse(0,h*.1,w*.38,h*.38,0,0,Math.PI*2); cx.clip();
+  cx.strokeStyle='rgba(160,100,20,0.22)'; cx.lineWidth=4;
+  [-h*.18,-h*.06,h*.06,h*.18].forEach(y=>{
+    cx.beginPath(); cx.moveTo(-w*.4,y+h*.1); cx.lineTo(w*.4,y+h*.1); cx.stroke();
+  });
+  cx.restore();
+
+  // Big cute door arch
+  cx.fillStyle='#3a1a06';
+  cx.beginPath(); cx.arc(0,h*.24,w*.14,Math.PI,0); cx.lineTo(w*.14,h*.42); cx.lineTo(-w*.14,h*.42); cx.closePath(); cx.fill();
+  cx.strokeStyle='#7a4010'; cx.lineWidth=3;
+  cx.beginPath(); cx.arc(0,h*.24,w*.14,Math.PI,0); cx.stroke();
+
+  // Porthole windows with cute eyes feel
+  [[-w*.22,h*.06],[w*.22,h*.06]].forEach(([px,py])=>{
+    cx.fillStyle='rgba(140,220,255,0.7)'; cx.beginPath(); cx.arc(px,py,w*.09,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='#9a6020'; cx.lineWidth=4; cx.beginPath(); cx.arc(px,py,w*.09,0,Math.PI*2); cx.stroke();
+    cx.fillStyle='rgba(255,255,255,0.55)'; cx.beginPath(); cx.arc(px-w*.03,py-w*.03,w*.03,0,Math.PI*2); cx.fill();
+  });
+
+  // Layered thatched roof — big rounded triangles
+  [[w*.46,h*.0,'#5aaa28'],[w*.38,-h*.12,'#4a9a20'],[w*.28,-h*.24,'#3a8a18'],[w*.18,-h*.34,'#2a7a10']].forEach(([lw2,ly,col],i)=>{
+    cx.fillStyle=col;
+    cx.beginPath();
+    cx.moveTo(-lw2,ly+h*.1);
+    cx.bezierCurveTo(-lw2*.6,ly-h*.06,-lw2*.2,ly-h*.1,0,ly-h*.12);
+    cx.bezierCurveTo(lw2*.2,ly-h*.1,lw2*.6,ly-h*.06,lw2,ly+h*.1);
+    cx.closePath(); cx.fill();
+    cx.strokeStyle='rgba(0,60,0,0.15)'; cx.lineWidth=2; cx.stroke();
+    // frond tips
+    cx.strokeStyle=col; cx.lineWidth=4; cx.lineCap='round';
+    for(let f=-3;f<=3;f++){
+      cx.beginPath(); cx.moveTo(f*(lw2/3.5),ly+h*.08); cx.lineTo(f*(lw2/3.2),ly-h*.03); cx.stroke();
+    }
+  });
+
+  // Palm leaf crown
+  cx.strokeStyle='#38a020'; cx.lineWidth=5; cx.lineCap='round';
+  [[-w*.15,-h*.5],[0,-h*.54],[w*.15,-h*.5],[w*.28,-h*.44],[-w*.28,-h*.44]].forEach(([lx,ly])=>{
+    cx.beginPath(); cx.moveTo(0,-h*.4); cx.quadraticCurveTo(lx*.5,ly*.7,lx,ly); cx.stroke();
+  });
+  // Coconuts
+  cx.fillStyle='#6a3a10';
+  [[0,-h*.46],[w*.1,-h*.42]].forEach(([cx2,cy])=>{
+    cx.beginPath(); cx.arc(cx2,cy,w*.04,0,Math.PI*2); cx.fill();
+  });
+
+  // Blush on hut :D
+  cuteBlush(cx,-w*.28,h*.15,w*.07); cuteBlush(cx,w*.28,h*.15,w*.07);
+
+  // Tiny algae spots at base
+  cx.fillStyle='rgba(60,190,80,0.45)';
+  [[-w*.38,h*.44,w*.05,h*.025],[w*.3,h*.46,w*.06,h*.025]].forEach(([x,y,rx,ry])=>{
+    cx.beginPath(); cx.ellipse(x,y,rx,ry,0,0,Math.PI*2); cx.fill();
+  });
+}
+
+// 2. CUTE STONE IDOL — chubby wide-eyed ancient statue
+function drawStoneIdol(cx,w,h){
+  // Plinth base
+  const plinthG=cx.createLinearGradient(0,h*.35,0,h*.5);
+  plinthG.addColorStop(0,'#6a6a7e'); plinthG.addColorStop(1,'#4a4a5e');
+  cx.fillStyle=plinthG;
+  cx.beginPath(); cx.ellipse(0,h*.44,w*.38,h*.07,0,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.moveTo(-w*.36,h*.38); cx.lineTo(w*.36,h*.38); cx.bezierCurveTo(w*.38,h*.5,-w*.38,h*.5,-w*.36,h*.38); cx.fill();
+
+  // Body — big rounded rectangle, slightly wider at bottom
+  const stoneG=cx.createRadialGradient(-w*.1,-h*.1,0,0,h*.0,w*.55);
+  stoneG.addColorStop(0,'#9090a8'); stoneG.addColorStop(.5,'#7070888'); stoneG.addColorStop(1,'#4e4e62');
+  cx.fillStyle='#80809a';
+  cx.beginPath();
+  cx.moveTo(-w*.3,-h*.45);
+  cx.lineTo(w*.3,-h*.45);
+  cx.bezierCurveTo(w*.38,-h*.45,w*.38,h*.36,w*.32,h*.38);
+  cx.lineTo(-w*.32,h*.38);
+  cx.bezierCurveTo(-w*.38,h*.36,-w*.38,-h*.45,-w*.3,-h*.45);
+  cx.closePath(); cx.fill();
+  // Stone gradient overlay
+  cx.save(); cx.clip();
+  const sg2=cx.createLinearGradient(-w*.3,0,w*.3,0);
+  sg2.addColorStop(0,'rgba(255,255,255,0.18)'); sg2.addColorStop(.5,'rgba(255,255,255,0.08)'); sg2.addColorStop(1,'rgba(0,0,0,0.15)');
+  cx.fillStyle=sg2; cx.fillRect(-w*.4,-h*.5,w*.8,h*1.0);
+  // Cracks
+  cx.strokeStyle='rgba(0,0,0,0.2)'; cx.lineWidth=1.5; cx.lineCap='round';
+  cx.beginPath(); cx.moveTo(-w*.05,-h*.4); cx.lineTo(-w*.08,h*.0); cx.lineTo(-w*.04,h*.2); cx.stroke();
+  cx.beginPath(); cx.moveTo(w*.14,-h*.15); cx.lineTo(w*.16,h*.1); cx.stroke();
+  cx.restore();
+
+  // Big wide hat/crown
+  cx.fillStyle='#9898b0';
+  cx.beginPath(); cx.ellipse(0,-h*.42,w*.28,h*.08,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#b0b0c8';
+  cx.beginPath(); cx.ellipse(0,-h*.44,w*.28,h*.03,0,0,Math.PI*2); cx.fill();
+
+  // Thick brow shelf
+  cx.fillStyle='#606075';
+  cx.beginPath(); cx.moveTo(-w*.25,-h*.14); cx.lineTo(w*.25,-h*.14);
+  cx.bezierCurveTo(w*.28,-h*.14,w*.28,-h*.04,w*.26,-h*.04);
+  cx.lineTo(-w*.26,-h*.04); cx.bezierCurveTo(-w*.28,-h*.04,-w*.28,-h*.14,-w*.25,-h*.14); cx.closePath(); cx.fill();
+
+  // HUGE cute wide eyes — the idol's charm
+  [[-w*.14,-h*.06],[w*.14,-h*.06]].forEach(([ex,ey])=>{
+    // Eye white — oval
+    cx.fillStyle='#e8e8f0'; cx.beginPath(); cx.ellipse(ex,ey,w*.1,h*.09,0,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='rgba(0,0,0,0.2)'; cx.lineWidth=2; cx.stroke();
+    // Iris — glowing teal
+    const eg=cx.createRadialGradient(ex+w*.02,ey,0,ex,ey,w*.07);
+    eg.addColorStop(0,'#60ffe0'); eg.addColorStop(.5,'#20c0a0'); eg.addColorStop(1,'#008870');
+    cx.fillStyle=eg; cx.beginPath(); cx.arc(ex+w*.015,ey,w*.065,0,Math.PI*2); cx.fill();
+    // Pupil
+    cx.fillStyle='#0a0a18'; cx.beginPath(); cx.arc(ex+w*.025,ey+h*.01,w*.035,0,Math.PI*2); cx.fill();
+    // Shine dots
+    cx.fillStyle='#fff'; cx.beginPath(); cx.arc(ex+w*.04,ey-h*.025,w*.016,0,Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(ex-w*.01,ey+h*.03,w*.008,0,Math.PI*2); cx.fill();
+    // Eyelashes (top)
+    cx.strokeStyle='#2a2a38'; cx.lineWidth=2; cx.lineCap='round';
+    for(let l=-2;l<=2;l++){
+      cx.beginPath(); cx.moveTo(ex+l*w*.025,ey-h*.08); cx.lineTo(ex+l*w*.028,ey-h*.1); cx.stroke();
+    }
+  });
+
+  // Wide flat cute nose
+  cx.fillStyle='#6e6e84';
+  cx.beginPath(); cx.ellipse(0,h*.08,w*.1,h*.05,0,0,Math.PI*2); cx.fill();
+  // Nostrils
+  cx.fillStyle='rgba(0,0,0,0.35)';
+  cx.beginPath(); cx.ellipse(-w*.05,h*.1,w*.03,h*.025,0,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.ellipse(w*.05,h*.1,w*.03,h*.025,0,0,Math.PI*2); cx.fill();
+
+  // Cute small mouth — slight open smile
+  cx.fillStyle='#2a2030'; cx.beginPath(); cx.ellipse(0,h*.2,w*.08,h*.04,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(255,180,180,0.4)'; cx.beginPath(); cx.ellipse(0,h*.21,w*.05,h*.025,0,0,Math.PI*2); cx.fill();
+
+  // Chubby cheek blushes
+  cuteBlush(cx,-w*.26,h*.1,w*.08); cuteBlush(cx,w*.26,h*.1,w*.08);
+
+  // Ear tabs
+  [[-w*.36,-h*.06],[w*.36,-h*.06]].forEach(([ex,ey])=>{
+    cx.fillStyle='#7a7a92'; cx.beginPath(); cx.ellipse(ex,ey,w*.07,h*.1,0,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='rgba(0,0,0,0.15)'; cx.lineWidth=2; cx.stroke();
+  });
+
+  // Barnacles / moss
+  cx.fillStyle='rgba(50,170,75,0.38)';
+  [[-w*.3,h*.3,w*.04],[w*.28,h*.22,w*.03],[0,h*.4,w*.05]].forEach(([x,y,r])=>{
+    cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2); cx.fill();
+  });
+}
+
+// 3. CUTE SUNKEN TEMPLE GATE — chunky pillars with sleepy faces
+function drawTempleGate(cx,w,h){
+  const s1='#786858', s2='#8a7a6a', s3='#564840';
+
+  // Left pillar — chubby rounded column
+  cx.fillStyle=s2;
+  cx.beginPath(); cx.moveTo(-w*.46,-h*.5); cx.lineTo(-w*.28,-h*.5);
+  cx.bezierCurveTo(-w*.26,-h*.5,-w*.26,h*.5,-w*.28,h*.5);
+  cx.lineTo(-w*.46,h*.5); cx.bezierCurveTo(-w*.48,h*.5,-w*.48,-h*.5,-w*.46,-h*.5); cx.closePath(); cx.fill();
+  // Right pillar
+  cx.beginPath(); cx.moveTo(w*.28,-h*.5); cx.lineTo(w*.46,-h*.5);
+  cx.bezierCurveTo(w*.48,-h*.5,w*.48,h*.5,w*.46,h*.5);
+  cx.lineTo(w*.28,h*.5); cx.bezierCurveTo(w*.26,h*.5,w*.26,-h*.5,w*.28,-h*.5); cx.closePath(); cx.fill();
+
+  // Pillar horizontal bands
+  cx.strokeStyle='rgba(0,0,0,0.2)'; cx.lineWidth=3;
+  [-h*.3,-h*.1,h*.1,h*.3].forEach(y=>{
+    cx.beginPath(); cx.moveTo(-w*.48,y); cx.lineTo(-w*.27,y); cx.stroke();
+    cx.beginPath(); cx.moveTo(w*.27,y); cx.lineTo(w*.48,y); cx.stroke();
+  });
+  // Pillar highlight
+  cx.strokeStyle='rgba(230,210,180,0.22)'; cx.lineWidth=5;
+  cx.beginPath(); cx.moveTo(-w*.44,-h*.46); cx.lineTo(-w*.44,h*.46); cx.stroke();
+  cx.beginPath(); cx.moveTo(w*.32,-h*.46); cx.lineTo(w*.32,h*.46); cx.stroke();
+
+  // Pillar face (left) — sleepy eye
+  cx.fillStyle='rgba(0,0,0,0.25)'; cx.beginPath(); cx.ellipse(-w*.37,-h*.05,w*.06,h*.04,0,0,Math.PI*2); cx.fill();
+  cx.strokeStyle='rgba(0,0,0,0.35)'; cx.lineWidth=2;
+  cx.beginPath(); cx.moveTo(-w*.43,-h*.05); cx.lineTo(-w*.31,-h*.05); cx.stroke(); // zzz sleepy line
+  // Pillar face (right)
+  cx.fillStyle='rgba(0,0,0,0.25)'; cx.beginPath(); cx.ellipse(w*.37,-h*.05,w*.06,h*.04,0,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.moveTo(w*.31,-h*.05); cx.lineTo(w*.43,-h*.05); cx.stroke();
+
+  // Big lintel arch — rounded chunky stone
+  cx.fillStyle=s1;
+  cx.beginPath(); cx.moveTo(-w*.48,-h*.5); cx.lineTo(w*.48,-h*.5);
+  cx.bezierCurveTo(w*.5,-h*.5,w*.5,-h*.3,w*.48,-h*.3);
+  cx.lineTo(w*.48,-h*.3); cx.lineTo(-w*.48,-h*.3);
+  cx.bezierCurveTo(-w*.5,-h*.3,-w*.5,-h*.5,-w*.48,-h*.5); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(0,0,0,0.15)'; cx.lineWidth=3; cx.stroke();
+  // Stone texture on lintel
+  cx.strokeStyle=s3; cx.lineWidth=2;
+  cx.beginPath(); cx.moveTo(-w*.3,-h*.42); cx.lineTo(-w*.3,-h*.31); cx.stroke();
+  cx.beginPath(); cx.moveTo(0,-h*.42); cx.lineTo(0,-h*.31); cx.stroke();
+  cx.beginPath(); cx.moveTo(w*.3,-h*.42); cx.lineTo(w*.3,-h*.31); cx.stroke();
+  // Carved circle symbols
+  [[-w*.35,-h*.4],[0,-h*.4],[w*.35,-h*.4]].forEach(([sx,sy])=>{
+    cx.strokeStyle='rgba(0,0,0,0.3)'; cx.lineWidth=2;
+    cx.beginPath(); cx.arc(sx,sy,w*.04,0,Math.PI*2); cx.stroke();
+  });
+
+  // Portal opening — glowing inside
+  const portalG=cx.createRadialGradient(0,h*.1,w*.02,0,h*.1,w*.24);
+  portalG.addColorStop(0,'rgba(0,200,160,0.25)'); portalG.addColorStop(.5,'rgba(0,80,60,0.3)'); portalG.addColorStop(1,'rgba(0,10,20,0.95)');
+  cx.fillStyle=portalG;
+  cx.beginPath();
+  cx.moveTo(-w*.26,-h*.3); cx.lineTo(w*.26,-h*.3);
+  cx.bezierCurveTo(w*.28,-h*.3,w*.28,h*.5,w*.26,h*.5);
+  cx.lineTo(-w*.26,h*.5); cx.bezierCurveTo(-w*.28,h*.5,-w*.28,-h*.3,-w*.26,-h*.3); cx.closePath(); cx.fill();
+
+  // Cute little glowing torches
+  [[-w*.38,-h*.2],[w*.38,-h*.2]].forEach(([tx,ty])=>{
+    cx.fillStyle='#c86010';
+    cx.beginPath(); cx.ellipse(tx,ty+h*.07,w*.03,h*.06,0,0,Math.PI*2); cx.fill();
+    // flame
+    const fg=cx.createRadialGradient(tx,ty,0,tx,ty,w*.08);
+    fg.addColorStop(0,'rgba(255,220,50,0.9)'); fg.addColorStop(.4,'rgba(255,130,20,0.7)'); fg.addColorStop(1,'rgba(255,60,0,0)');
+    cx.fillStyle=fg; cx.beginPath(); cx.arc(tx,ty,w*.08,0,Math.PI*2); cx.fill();
+    // flame tip shape
+    cx.fillStyle='rgba(255,230,80,0.8)';
+    cx.beginPath(); cx.moveTo(tx,ty+h*.02); cx.bezierCurveTo(tx-w*.03,ty-h*.04,tx-w*.01,ty-h*.08,tx,ty-h*.1);
+    cx.bezierCurveTo(tx+w*.01,ty-h*.08,tx+w*.03,ty-h*.04,tx,ty+h*.02); cx.fill();
+  });
+
+  // Vines with cute round leaves
+  cx.strokeStyle='rgba(60,160,60,0.55)'; cx.lineWidth=3; cx.lineCap='round';
+  cx.beginPath(); cx.moveTo(-w*.46,-h*.2); cx.bezierCurveTo(-w*.5,h*.0,-w*.44,h*.2,-w*.47,h*.4); cx.stroke();
+  cx.beginPath(); cx.moveTo(w*.46,-h*.12); cx.bezierCurveTo(w*.5,h*.08,w*.44,h*.25,w*.47,h*.42); cx.stroke();
+  cx.fillStyle='rgba(70,190,70,0.5)';
+  [[-w*.48,h*.0,w*.05],[-w*.45,h*.2,w*.06],[w*.48,h*.08,w*.05],[w*.46,h*.28,w*.06]].forEach(([x,y,r])=>{
+    cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2); cx.fill();
+  });
+}
+
+// 4. CUTE SHIPWRECK — chubby toy boat wrecked on the seafloor
+function drawShipwreck(cx,w,h){
+  // Hull — big chubby rounded boat shape
+  const hullG=cx.createLinearGradient(0,-h*.3,0,h*.5);
+  hullG.addColorStop(0,'#7a4828'); hullG.addColorStop(.4,'#5a3218'); hullG.addColorStop(1,'#3a1e08');
+  cx.fillStyle=hullG;
+  cx.beginPath();
+  cx.moveTo(-w*.5,h*.48);
+  cx.bezierCurveTo(-w*.5,h*.2,-w*.48,-h*.02,-w*.35,-h*.28);
+  cx.bezierCurveTo(-w*.18,-h*.52,w*.22,-h*.52,w*.38,-h*.28);
+  cx.bezierCurveTo(w*.5,-h*.02,w*.5,h*.2,w*.5,h*.48);
+  cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(180,100,40,0.4)'; cx.lineWidth=4; cx.stroke();
+
+  // Deck stripe
+  cx.fillStyle='#8a5a30';
+  cx.beginPath();
+  cx.moveTo(-w*.44,h*.04);
+  cx.bezierCurveTo(-w*.44,-h*.06,-w*.3,-h*.24,-w*.12,-h*.3);
+  cx.bezierCurveTo(w*.08,-h*.36,w*.32,-h*.28,w*.44,-h*.08);
+  cx.lineTo(w*.44,h*.08);
+  cx.bezierCurveTo(w*.32,-h*.16,w*.08,-h*.24,-w*.12,-h*.18);
+  cx.bezierCurveTo(-w*.3,-h*.12,-w*.44,-h*.02,-w*.44,h*.04);
+  cx.closePath(); cx.fill();
+
+  // Wood planks
+  cx.strokeStyle='rgba(0,0,0,0.3)'; cx.lineWidth=2.5;
+  for(let i=0;i<5;i++){
+    const t=i/5;
+    cx.beginPath();
+    cx.moveTo(-w*.48,h*(.05+t*.38));
+    cx.bezierCurveTo(-w*.1,h*(.0+t*.36),w*.2,h*(.04+t*.34),w*.47,h*(.06+t*.32));
+    cx.stroke();
+  }
+  // Vertical ribs
+  cx.strokeStyle='rgba(0,0,0,0.28)'; cx.lineWidth=3;
+  [-w*.3,-w*.1,w*.1,w*.3].forEach(bx=>{
+    cx.beginPath(); cx.moveTo(bx,h*.5); cx.lineTo(bx,h*.06); cx.stroke();
+  });
+
+  // Broken mast — cute crooked
+  cx.fillStyle='#5a3418'; cx.strokeStyle='#3a1e08'; cx.lineWidth=4;
+  cx.save(); cx.translate(-w*.12,-h*.08); cx.rotate(0.25);
+  cx.beginPath(); cx.moveTo(-w*.04,0); cx.lineTo(-w*.04,-h*.32); cx.lineTo(w*.04,-h*.32); cx.lineTo(w*.04,0); cx.closePath(); cx.fill(); cx.stroke();
+  // Torn sail flap
+  cx.fillStyle='rgba(240,230,200,0.7)';
+  cx.beginPath(); cx.moveTo(w*.04,-h*.28); cx.lineTo(w*.22,-h*.2); cx.lineTo(w*.18,-h*.08); cx.lineTo(w*.04,-h*.08); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(180,160,120,0.5)'; cx.lineWidth=1.5; cx.stroke();
+  cx.restore();
+
+  // Round portholes — with cute face-like feel
+  [[-w*.22,h*.12],[w*.22,h*.12]].forEach(([px,py])=>{
+    cx.fillStyle='rgba(80,170,220,0.55)'; cx.beginPath(); cx.arc(px,py,w*.1,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='#7a4828'; cx.lineWidth=5; cx.beginPath(); cx.arc(px,py,w*.1,0,Math.PI*2); cx.stroke();
+    cx.fillStyle='rgba(255,255,255,0.45)'; cx.beginPath(); cx.arc(px-w*.03,py-w*.03,w*.035,0,Math.PI*2); cx.fill();
+  });
+
+  // Cute fish peeking from porthole
+  cx.save(); cx.beginPath(); cx.arc(w*.22,h*.12,w*.09,0,Math.PI*2); cx.clip();
+  cx.fillStyle='#ff7820'; cx.beginPath(); cx.ellipse(w*.26,h*.14,w*.05,w*.03,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#fff'; cx.beginPath(); cx.arc(w*.23,h*.12,w*.012,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#111'; cx.beginPath(); cx.arc(w*.232,h*.12,w*.007,0,Math.PI*2); cx.fill();
+  cx.restore();
+
+  // Barnacles
+  cx.fillStyle='rgba(150,138,108,0.65)';
+  [[w*.4,h*.3,w*.035],[w*.3,h*.42,w*.025],[w*.1,h*.46,w*.03],[-w*.2,h*.44,w*.025],[-w*.38,h*.35,w*.03]].forEach(([x,y,r])=>{
+    cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2); cx.fill();
+  });
+  // Seaweed
+  cx.strokeStyle='rgba(50,180,80,0.6)'; cx.lineWidth=3; cx.lineCap='round';
+  cx.beginPath(); cx.moveTo(-w*.38,h*.5); cx.bezierCurveTo(-w*.42,h*.3,-w*.34,h*.18,-w*.38,h*.02); cx.stroke();
+  cx.beginPath(); cx.moveTo(w*.1,h*.5); cx.bezierCurveTo(w*.12,h*.3,w*.06,h*.2,w*.1,h*.08); cx.stroke();
+}
+
+// 5. CUTE CORAL REEF — super colorful bubbly reef
+function drawCoralReef(cx,w,h){
+  // Rock base — smooth pebble shape
+  const rg=cx.createLinearGradient(0,h*.1,0,h*.5);
+  rg.addColorStop(0,'#5a5060'); rg.addColorStop(1,'#383040');
+  cx.fillStyle=rg;
+  cx.beginPath();
+  cx.moveTo(-w*.5,h*.5); cx.bezierCurveTo(-w*.5,h*.2,-w*.38,h*.08,0,h*.06);
+  cx.bezierCurveTo(w*.38,h*.08,w*.5,h*.2,w*.5,h*.5); cx.closePath(); cx.fill();
+
+  // Coral branch helper
+  function cc(cx,x,y,a,len,thick,col,depth){
+    if(depth<0||len<2)return;
+    cx.strokeStyle=col; cx.lineWidth=thick; cx.lineCap='round';
+    cx.beginPath(); cx.moveTo(x,y);
+    const ex=x+Math.cos(a)*len, ey=y+Math.sin(a)*len;
+    cx.lineTo(ex,ey); cx.stroke();
+    if(depth===0){
+      // Cute little circles at tips
+      cx.fillStyle=col; cx.beginPath(); cx.arc(ex,ey,thick*2.5,0,Math.PI*2); cx.fill();
+      cx.fillStyle='rgba(255,255,255,0.6)'; cx.beginPath(); cx.arc(ex-thick*.8,ey-thick*.8,thick*.9,0,Math.PI*2); cx.fill();
+    }
+    cc(cx,ex,ey,a-0.52,len*.7,thick*.68,col,depth-1);
+    cc(cx,ex,ey,a+0.42,len*.68,thick*.65,col,depth-1);
+    if(depth>0) cc(cx,ex,ey,a+0.08,len*.54,thick*.58,col,depth-1);
+  }
+  // Thick cute corals
+  cc(cx,-w*.3,h*.48,-Math.PI/2,h*.27,w*.07,'#ff5588',3);
+  cc(cx,-w*.02,h*.48,-Math.PI/2,h*.32,w*.08,'#ff7722',3);
+  cc(cx,w*.26,h*.48,-Math.PI/2,h*.25,w*.065,'#cc44ee',3);
+  cc(cx,-w*.14,h*.48,-Math.PI*.52,h*.19,w*.05,'#44aaff',2);
+  cc(cx,w*.12,h*.48,-Math.PI*.44,h*.18,w*.045,'#22ddcc',2);
+
+  // Big round bubble coral — inflated bubble-like
+  const bc=cx.createRadialGradient(w*.38,h*.28,0,w*.38,h*.28,w*.14);
+  bc.addColorStop(0,'#ffaacc'); bc.addColorStop(.7,'#ee5588'); bc.addColorStop(1,'#cc2255');
+  cx.fillStyle=bc; cx.beginPath(); cx.arc(w*.38,h*.28,w*.14,0,Math.PI*2); cx.fill();
+  cx.strokeStyle='rgba(255,255,255,0.4)'; cx.lineWidth=2; cx.stroke();
+  cx.fillStyle='rgba(255,255,255,0.4)'; cx.beginPath(); cx.ellipse(w*.31,h*.21,w*.05,w*.03,-0.5,0,Math.PI*2); cx.fill();
+  // Tiny face on bubble coral
+  cuteEye(cx,w*.34,h*.25,w*.03); cuteEye(cx,w*.42,h*.25,w*.03);
+  cuteSmile(cx,w*.38,h*.29,w*.03,2);
+
+  // Sea anemone — round blobs with tentacles
+  const anBase=[-w*.4,h*.42];
+  cx.fillStyle='#ff5599';
+  cx.beginPath(); cx.arc(anBase[0],anBase[1],w*.06,0,Math.PI*2); cx.fill();
+  for(let i=0;i<6;i++){
+    const a=i/6*Math.PI*2, r=w*.1;
+    cx.strokeStyle='#ff77aa'; cx.lineWidth=4; cx.lineCap='round';
+    cx.beginPath(); cx.moveTo(anBase[0],anBase[1]);
+    cx.bezierCurveTo(anBase[0]+Math.cos(a)*r*.6,anBase[1]+Math.sin(a)*r*.4-h*.04,
+                     anBase[0]+Math.cos(a)*r*.9,anBase[1]+Math.sin(a)*r*.6-h*.08,
+                     anBase[0]+Math.cos(a)*r,anBase[1]+Math.sin(a)*r*.5-h*.07);
+    cx.stroke();
+    cx.fillStyle='#ffaacc'; cx.beginPath(); cx.arc(anBase[0]+Math.cos(a)*r,anBase[1]+Math.sin(a)*r*.5-h*.07,w*.025,0,Math.PI*2); cx.fill();
+  }
+
+  // Pearl clam
+  cx.fillStyle='#e8a858'; cx.beginPath(); cx.ellipse(w*.35,h*.44,w*.1,h*.05,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#f0c070'; cx.beginPath(); cx.ellipse(w*.35,h*.40,w*.1,h*.055,0,Math.PI,0); cx.fill();
+  cx.strokeStyle='rgba(160,100,20,0.3)'; cx.lineWidth=2; cx.stroke();
+  cx.fillStyle='#ffffff'; cx.beginPath(); cx.arc(w*.35,h*.42,w*.022,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(220,220,255,0.7)'; cx.beginPath(); cx.arc(w*.35,h*.42,w*.018,0,Math.PI*2); cx.fill();
+}
+
+// 6. CUTE WATERFALL CLIFF — chubby mountain with sparkly waterfall
+function drawWaterfallCliff(cx,w,h){
+  // Back mountain
+  cx.fillStyle='#4e4860';
+  cx.beginPath();
+  cx.moveTo(-w*.5,h*.5); cx.bezierCurveTo(-w*.5,h*.1,-w*.4,-h*.2,-w*.1,-h*.52);
+  cx.bezierCurveTo(w*.15,-h*.58,w*.4,-h*.35,w*.5,-h*.05);
+  cx.lineTo(w*.5,h*.5); cx.closePath(); cx.fill();
+
+  // Front cliff
+  const cg=cx.createLinearGradient(-w*.3,0,w*.1,0);
+  cg.addColorStop(0,'#6a6478'); cg.addColorStop(.5,'#7e7890'); cg.addColorStop(1,'#525064');
+  cx.fillStyle=cg;
+  cx.beginPath();
+  cx.moveTo(-w*.5,h*.5); cx.bezierCurveTo(-w*.5,h*.1,-w*.48,-h*.12,-w*.3,-h*.48);
+  cx.bezierCurveTo(-w*.14,-h*.58,w*.05,-h*.5,w*.18,-h*.3);
+  cx.bezierCurveTo(w*.25,-h*.15,w*.25,h*.2,w*.22,h*.5); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(200,190,220,0.15)'; cx.lineWidth=5;
+  cx.beginPath(); cx.moveTo(-w*.46,-h*.05); cx.bezierCurveTo(-w*.44,-h*.3,-w*.32,-h*.46,-w*.14,-h*.5); cx.stroke();
+
+  // Waterfall — animated shimmer with cute bubbles
+  const wg=cx.createLinearGradient(w*.12,-h*.5,w*.18,h*.5);
+  wg.addColorStop(0,'rgba(210,245,255,0.95)');
+  wg.addColorStop(.3,'rgba(160,220,255,0.85)');
+  wg.addColorStop(.7,'rgba(100,190,245,0.7)');
+  wg.addColorStop(1,'rgba(60,150,210,0.4)');
+  cx.fillStyle=wg;
+  cx.beginPath();
+  cx.moveTo(w*.1,-h*.5); cx.bezierCurveTo(w*.13,-h*.3,w*.08,-h*.1,w*.12,h*.1);
+  cx.bezierCurveTo(w*.15,h*.32,w*.1,h*.42,w*.14,h*.5);
+  cx.lineTo(w*.24,h*.5); cx.bezierCurveTo(w*.2,h*.42,w*.25,h*.32,w*.22,h*.1);
+  cx.bezierCurveTo(w*.26,-h*.1,w*.21,-h*.3,w*.24,-h*.5); cx.closePath(); cx.fill();
+  // Waterfall shine
+  cx.strokeStyle='rgba(255,255,255,0.6)'; cx.lineWidth=2;
+  [w*.13,w*.17,w*.21].forEach(wx=>{
+    cx.beginPath(); cx.moveTo(wx,-h*.44); cx.bezierCurveTo(wx+w*.02,-h*.2,wx-w*.02,h*.1,wx,h*.44); cx.stroke();
+  });
+  // Splash pool
+  const pg=cx.createRadialGradient(w*.17,h*.48,0,w*.17,h*.48,w*.2);
+  pg.addColorStop(0,'rgba(200,240,255,0.8)'); pg.addColorStop(1,'rgba(80,170,230,0)');
+  cx.fillStyle=pg; cx.beginPath(); cx.ellipse(w*.17,h*.48,w*.2,h*.07,0,0,Math.PI*2); cx.fill();
+  // Cute bubble drops
+  cx.strokeStyle='rgba(200,240,255,0.7)'; cx.lineWidth=1.5;
+  [[w*.1,h*.35,w*.02],[w*.22,h*.3,w*.015],[w*.14,h*.2,w*.018]].forEach(([x,y,r])=>{
+    cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2); cx.stroke();
+  });
+
+  // Fluffy round treetops
+  const tc=['#38b040','#48c050','#28a030','#58d060','#1e8828'];
+  [[-w*.36,-h*.52,w*.15],[-w*.14,-h*.56,w*.13],[w*.0,-h*.52,w*.11],[-w*.48,-h*.3,w*.1],[-w*.42,-h*.1,w*.09]].forEach(([tx,ty,tr],i)=>{
+    cx.fillStyle=tc[i%tc.length];
+    cx.beginPath(); cx.arc(tx,ty,tr,0,Math.PI*2); cx.fill();
+    // Second fluff
+    cx.fillStyle=tc[(i+2)%tc.length];
+    cx.beginPath(); cx.arc(tx+tr*.4,ty-tr*.25,tr*.75,0,Math.PI*2); cx.fill();
+    // Small shine dot
+    cx.fillStyle='rgba(255,255,255,0.2)'; cx.beginPath(); cx.arc(tx-tr*.2,ty-tr*.3,tr*.2,0,Math.PI*2); cx.fill();
+  });
+  // Colorful flowers
+  [['#ffee00',-w*.42,-h*.4],['#ff88aa',-w*.28,-h*.46],['#88ffaa',-w*.18,-h*.5]].forEach(([col,fx,fy])=>{
+    cx.fillStyle=col; cx.beginPath(); cx.arc(fx,fy,w*.03,0,Math.PI*2); cx.fill();
+    for(let p=0;p<5;p++){const pa=p/5*Math.PI*2; cx.beginPath(); cx.arc(fx+Math.cos(pa)*w*.03,fy+Math.sin(pa)*h*.03,w*.018,0,Math.PI*2); cx.fill();}
+    cx.fillStyle='#fff'; cx.beginPath(); cx.arc(fx,fy,w*.012,0,Math.PI*2); cx.fill();
+  });
+}
+
+// 7. CUTE PIRATE CHEST — chubby treasure box with happy face
+function drawPirateChest(cx,w,h){
+  // Ground shadow
+  cx.fillStyle='rgba(0,0,0,0.28)';
+  cx.beginPath(); cx.ellipse(0,h*.5,w*.44,h*.05,0,0,Math.PI*2); cx.fill();
+
+  // Body — chunky box
+  const bg=cx.createLinearGradient(0,h*.02,0,h*.46);
+  bg.addColorStop(0,'#9a5428'); bg.addColorStop(.5,'#7a3c14'); bg.addColorStop(1,'#521e08');
+  cx.fillStyle=bg;
+  cx.beginPath(); cx.moveTo(-w*.46,h*.46); cx.lineTo(-w*.46,h*.1);
+  cx.bezierCurveTo(-w*.46,h*.04,-w*.4,h*.02,-w*.35,h*.02);
+  cx.lineTo(w*.35,h*.02); cx.bezierCurveTo(w*.4,h*.02,w*.46,h*.04,w*.46,h*.1);
+  cx.lineTo(w*.46,h*.46); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(180,80,20,0.3)'; cx.lineWidth=3; cx.stroke();
+
+  // Wood grain
+  cx.strokeStyle='rgba(0,0,0,0.22)'; cx.lineWidth=2.5;
+  [h*.16,h*.26,h*.36].forEach(y=>{ cx.beginPath();cx.moveTo(-w*.44,y);cx.lineTo(w*.44,y);cx.stroke(); });
+  [-w*.16,0,w*.16].forEach(x=>{ cx.beginPath();cx.moveTo(x,h*.02);cx.lineTo(x,h*.46);cx.stroke(); });
+
+  // Gold metal bands
+  const goldG=cx.createLinearGradient(0,h*.14,0,h*.22);
+  goldG.addColorStop(0,'#ffd840'); goldG.addColorStop(.5,'#e0a818'); goldG.addColorStop(1,'#c08010');
+  cx.fillStyle=goldG; cx.fillRect(-w*.46,h*.14,w*.92,h*.09);
+  cx.fillRect(-w*.06,h*.02,w*.12,h*.44);
+  // Metal corner brackets
+  cx.fillStyle='#d0a020';
+  [[-w*.46,h*.02],[w*.38,h*.02],[-w*.46,h*.38],[w*.38,h*.38]].forEach(([bx,by])=>{
+    cx.beginPath(); cx.arc(bx+w*.07,by+h*.07,w*.06,0,Math.PI*2); cx.fill();
+  });
+
+  // Lock — cute heart-shaped hasp
+  cx.fillStyle='#f0c828';
+  cx.beginPath(); cx.arc(-w*.04,h*.22,w*.065,0,Math.PI*2); cx.fill(); // circle back
+  cx.beginPath(); cx.arc(w*.04,h*.22,w*.065,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.moveTo(-w*.1,h*.22); cx.lineTo(0,h*.32); cx.lineTo(w*.1,h*.22); cx.closePath(); cx.fill();
+  cx.strokeStyle='#c09010'; cx.lineWidth=4;
+  cx.beginPath(); cx.arc(0,h*.18,w*.06,Math.PI,0); cx.stroke(); // shackle
+  cx.fillStyle='#d4a020'; cx.beginPath(); cx.arc(0,h*.25,w*.022,0,Math.PI*2); cx.fill(); // keyhole
+
+  // Lid — open at angle showing gold inside
+  cx.save(); cx.translate(0,h*.02); cx.rotate(-0.48);
+  const lg=cx.createLinearGradient(0,-h*.3,0,0);
+  lg.addColorStop(0,'#b06030'); lg.addColorStop(1,'#803810');
+  cx.fillStyle=lg;
+  cx.beginPath(); cx.moveTo(-w*.46,-h*.3); cx.lineTo(w*.46,-h*.3);
+  cx.bezierCurveTo(w*.48,-h*.3,w*.48,0,w*.46,0);
+  cx.lineTo(-w*.46,0); cx.bezierCurveTo(-w*.48,0,-w*.48,-h*.3,-w*.46,-h*.3); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(180,80,20,0.3)'; cx.lineWidth=3; cx.stroke();
+  // Inside gold glow
+  const ig=cx.createLinearGradient(0,-h*.3,0,0);
+  ig.addColorStop(0,'rgba(255,220,50,0.4)'); ig.addColorStop(1,'rgba(255,180,0,0.1)');
+  cx.fillStyle=ig; cx.fillRect(-w*.44,-h*.28,w*.88,h*.27);
+  cx.fillStyle='#d0a020'; cx.fillRect(-w*.44,-h*.26,w*.88,h*.07); cx.fillRect(-w*.06,-h*.3,w*.12,h*.3);
+  cx.restore();
+
+  // Spilling gold coins — fat and shiny
+  [[-w*.3,h*.0,'#ffd828'],[-w*.16,-h*.04,'#ffc820'],[w*.1,-h*.01,'#ffda30'],[w*.24,-h*.03,'#ffcc18'],[w*.34,h*.04,'#ffd020'],[-w*.4,h*.04,'#ffca20']].forEach(([cx2,cy,col])=>{
+    cx.fillStyle=col;
+    cx.beginPath(); cx.ellipse(cx2,cy,w*.06,h*.036,0.2,0,Math.PI*2); cx.fill();
+    cx.fillStyle='rgba(255,255,180,0.5)'; cx.beginPath(); cx.ellipse(cx2-w*.01,cy-h*.01,w*.02,h*.012,0,0,Math.PI*2); cx.fill();
+  });
+  // Big ruby gem
+  cx.fillStyle='#ff2828';
+  cx.beginPath(); cx.moveTo(-w*.08,-h*.07); cx.lineTo(0,-h*.15); cx.lineTo(w*.08,-h*.07); cx.lineTo(w*.04,h*.0); cx.lineTo(-w*.04,h*.0); cx.closePath(); cx.fill();
+  cx.fillStyle='rgba(255,180,180,0.6)'; cx.beginPath(); cx.moveTo(-w*.04,-h*.08); cx.lineTo(0,-h*.13); cx.lineTo(0,-h*.04); cx.closePath(); cx.fill();
+  // Cute star sparkles near gems
+  cx.fillStyle='rgba(255,255,100,0.8)';
+  [[w*.18,-h*.06],[w*.12,-h*.12],[w*.02,-h*.14]].forEach(([sx,sy])=>{
+    for(let s=0;s<4;s++){const sa=s/4*Math.PI*2; cx.beginPath();cx.moveTo(sx,sy);cx.lineTo(sx+Math.cos(sa)*w*.02,sy+Math.sin(sa)*h*.02);cx.stroke();}
+    cx.beginPath(); cx.arc(sx,sy,w*.012,0,Math.PI*2); cx.fill();
+  });
+}
+
+// 8. CUTE DRIFTWOOD — smooth chubby weathered log
+function drawDriftwoodLog(cx,w,h){
+  // Log shadow
+  cx.fillStyle='rgba(0,0,0,0.2)';
+  cx.beginPath(); cx.ellipse(w*.02,h*.45,w*.44,h*.04,0.05,0,Math.PI*2); cx.fill();
+
+  // Main log body — nice smooth taper
+  cx.beginPath();
+  cx.moveTo(-w*.5,-h*.08);
+  cx.bezierCurveTo(-w*.48,-h*.4,-w*.25,-h*.46,w*.05,-h*.38);
+  cx.bezierCurveTo(w*.28,-h*.3,w*.5,-h*.2,w*.5,-h*.02);
+  cx.bezierCurveTo(w*.5,h*.28,w*.3,h*.48,w*.06,h*.46);
+  cx.bezierCurveTo(-w*.2,h*.44,-w*.48,h*.3,-w*.5,h*.04);
+  cx.closePath();
+  const g=cx.createLinearGradient(-w*.4,-h*.3,w*.4,h*.3);
+  g.addColorStop(0,'#3a1e08'); g.addColorStop(.25,'#6a3818'); g.addColorStop(.55,'#5a2e12'); g.addColorStop(1,'#2a1206');
+  cx.fillStyle=g; cx.fill();
+  cx.strokeStyle='rgba(180,100,40,0.25)'; cx.lineWidth=4; cx.stroke();
+
+  // Wood grain lines
+  cx.save(); cx.clip();
+  cx.strokeStyle='rgba(0,0,0,0.22)'; cx.lineWidth=3; cx.lineCap='round';
+  [-.18,-.04,.12,.28].forEach(t=>{
+    cx.beginPath(); cx.moveTo(-w*.46,h*t);
+    cx.bezierCurveTo(-w*.12,h*(t-0.08),w*.18,h*(t+0.06),w*.46,h*t); cx.stroke();
+  });
+  cx.strokeStyle='rgba(180,110,50,0.28)'; cx.lineWidth=6;
+  cx.beginPath(); cx.moveTo(-w*.44,-h*.12); cx.bezierCurveTo(-w*.1,-h*.34,w*.26,-h*.2,w*.44,-h*.04); cx.stroke();
+  cx.restore();
+
+  // Cute round knot holes
+  cx.fillStyle='rgba(0,0,0,0.55)';
+  cx.beginPath(); cx.ellipse(-w*.2,h*.1,w*.06,h*.09,0.3,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(80,30,8,0.4)';
+  cx.beginPath(); cx.ellipse(-w*.2,h*.1,w*.04,h*.06,0.3,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(0,0,0,0.5)';
+  cx.beginPath(); cx.ellipse(w*.24,-h*.04,w*.04,h*.06,-0.2,0,Math.PI*2); cx.fill();
+
+  // Chubby stub branches
+  cx.strokeStyle='#4a2010'; cx.lineWidth=h*.22; cx.lineCap='round';
+  cx.beginPath(); cx.moveTo(-w*.22,-h*.32); cx.lineTo(-w*.17,-h*.52); cx.stroke();
+  cx.strokeStyle='#3e1a0a'; cx.lineWidth=h*.16;
+  cx.beginPath(); cx.moveTo(w*.12,-h*.28); cx.lineTo(w*.16,-h*.5); cx.stroke();
+
+  // Round moss blobs — cute soft green
+  cx.fillStyle='rgba(60,180,70,0.5)';
+  [[-w*.38,h*.38,w*.09,h*.04],[-w*.08,h*.44,w*.07,h*.03],[w*.32,h*.38,w*.08,h*.035]].forEach(([x,y,rx,ry])=>{
+    cx.beginPath(); cx.ellipse(x,y,rx,ry,0,0,Math.PI*2); cx.fill();
+  });
+  // Little mushroom on top
+  cx.fillStyle='#e84848'; cx.beginPath(); cx.arc(-w*.05,-h*.44,w*.055,Math.PI,0); cx.fill();
+  cx.strokeStyle='rgba(180,20,20,0.3)'; cx.lineWidth=1; cx.stroke();
+  cx.fillStyle='#cc2828'; cx.beginPath(); cx.ellipse(-w*.05,-h*.45,w*.055,h*.02,0,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#f0b8b0'; cx.beginPath(); cx.rect(-w*.06,-h*.44,w*.02,h*.06); cx.fill();
+  cx.beginPath(); cx.rect(-w*.05,-h*.44,w*.02,h*.06); cx.fill();
+  // White spots on mushroom
+  cx.fillStyle='rgba(255,255,255,0.7)';
+  cx.beginPath(); cx.arc(-w*.08,-h*.47,w*.012,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(-w*.02,-h*.46,w*.01,0,Math.PI*2); cx.fill();
+}
+
+// 9. CUTE ROCK CLUSTER — round chubby pebbles
+function drawRockCluster(cx,w,h){
+  // Back rock
+  cx.fillStyle='#60607e';
+  cx.beginPath(); cx.ellipse(w*.28,-h*.05,w*.22,h*.26,0.15,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(255,255,255,0.12)'; cx.beginPath(); cx.ellipse(w*.2,-h*.14,w*.09,h*.06,-0.4,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#585070';
+  cx.beginPath(); cx.ellipse(-w*.3,-h*.02,w*.2,h*.22,-0.1,0,Math.PI*2); cx.fill();
+  cx.fillStyle='rgba(255,255,255,0.1)'; cx.beginPath(); cx.ellipse(-w*.36,-h*.1,w*.07,h*.05,0.3,0,Math.PI*2); cx.fill();
+
+  // Front big cute rock
+  const fg=cx.createRadialGradient(-w*.12,-h*.18,0,0,0,w*.52);
+  fg.addColorStop(0,'#9a9ab0'); fg.addColorStop(.4,'#7a7a92'); fg.addColorStop(.8,'#5a5a72'); fg.addColorStop(1,'#3a3a50');
+  cx.fillStyle=fg;
+  cx.beginPath();
+  cx.moveTo(0,-h*.5); cx.bezierCurveTo(w*.3,-h*.46,w*.52,-h*.22,w*.5,h*.12);
+  cx.bezierCurveTo(w*.48,h*.44,w*.24,h*.52,0,h*.5);
+  cx.bezierCurveTo(-w*.26,h*.52,-w*.52,h*.3,-w*.5,0);
+  cx.bezierCurveTo(-w*.48,-h*.28,-w*.26,-h*.52,0,-h*.5); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(200,200,220,0.15)'; cx.lineWidth=4; cx.stroke();
+
+  cx.save(); cx.clip();
+  cx.strokeStyle='rgba(0,0,0,0.2)'; cx.lineWidth=2; cx.lineCap='round';
+  cx.beginPath(); cx.moveTo(-w*.08,-h*.38); cx.lineTo(-w*.1,h*.06); cx.lineTo(-w*.2,h*.3); cx.stroke();
+  cx.beginPath(); cx.moveTo(w*.2,-h*.08); cx.lineTo(w*.24,h*.24); cx.stroke();
+  cx.fillStyle='rgba(220,220,240,0.22)'; cx.beginPath(); cx.ellipse(-w*.14,-h*.2,w*.2,h*.12,-0.4,0,Math.PI*2); cx.fill();
+  cx.restore();
+
+  // Cute face on rock
+  cuteBlush(cx,-w*.28,h*.12,w*.07); cuteBlush(cx,w*.28,h*.12,w*.07);
+  // Sleepy squint eyes
+  cx.strokeStyle='#2a2a40'; cx.lineWidth=3; cx.lineCap='round';
+  cx.beginPath(); cx.arc(-w*.16,h*.02,w*.07,Math.PI+0.3,Math.PI*2-0.3); cx.stroke();
+  cx.beginPath(); cx.arc(w*.16,h*.02,w*.07,Math.PI+0.3,Math.PI*2-0.3); cx.stroke();
+  // Tiny smile
+  cx.beginPath(); cx.arc(0,h*.12,w*.06,0.1,Math.PI-0.1); cx.stroke();
+
+  // Moss patches
+  cx.fillStyle='rgba(50,170,65,0.45)';
+  [[w*.24,h*.34,w*.1,h*.05,0.3],[-w*.3,h*.28,w*.09,h*.04,-0.2],[0,h*.46,w*.12,h*.04,0]].forEach(([x,y,rx,ry,a])=>{
+    cx.beginPath(); cx.ellipse(x,y,rx,ry,a,0,Math.PI*2); cx.fill();
+  });
+  // Little snail on rock
+  cx.fillStyle='#e8a838';
+  cx.beginPath(); cx.arc(w*.35,-h*.22,w*.04,0,Math.PI*2); cx.fill();
+  cx.strokeStyle='#c07820'; cx.lineWidth=3;
+  cx.beginPath(); cx.arc(w*.35,-h*.22,w*.04,0,Math.PI*2); cx.stroke();
+  cx.strokeStyle='#8a4010'; cx.lineWidth=2; cx.lineCap='round';
+  cx.beginPath(); cx.moveTo(w*.31,-h*.22); cx.lineTo(w*.24,-h*.25); cx.stroke(); // body
+  cx.beginPath(); cx.moveTo(w*.27,-h*.26); cx.lineTo(w*.26,-h*.3); cx.stroke(); // antenna
+  cx.beginPath(); cx.moveTo(w*.25,-h*.25); cx.lineTo(w*.24,-h*.29); cx.stroke();
+  cx.fillStyle='#222'; cx.beginPath(); cx.arc(w*.26,- h*.3,w*.008,0,Math.PI*2); cx.fill();
+  cx.beginPath(); cx.arc(w*.24,-h*.29,w*.008,0,Math.PI*2); cx.fill();
+}
+
+// 10. CUTE TALL PLANT — chubby wavy plant with happy leaves
+function drawTallPlant(cx,w,h){
+  const stems=[
+    {pts:[[-w*.18,h*.5],[-w*.22,h*.15],[-w*.12,-h*.15],[-w*.18,-h*.42]],col:'#30a048',leaf:'#44c060'},
+    {pts:[[0,h*.5],[w*.04,h*.1],[-w*.06,-h*.18],[0,-h*.48]],col:'#3aaa52',leaf:'#50cc6a'},
+    {pts:[[w*.16,h*.5],[w*.18,h*.12],[w*.1,-h*.16],[w*.16,-h*.44]],col:'#2e9840',leaf:'#42b858'},
+  ];
+  stems.forEach(({pts,col,leaf},si)=>{
+    // Thick stem with gradient
+    cx.strokeStyle=col; cx.lineWidth=w*.12; cx.lineCap='round'; cx.lineJoin='round';
+    cx.beginPath(); pts.forEach(([x,y],i)=>i?cx.lineTo(x,y):cx.moveTo(x,y)); cx.stroke();
+    // Chubby cute leaves
+    for(let i=1;i<pts.length;i++){
+      const [sx,sy]=pts[i], side=(i%2)?1:-1;
+      cx.save(); cx.translate(sx,sy); cx.rotate(side*0.65);
+      // Leaf — round heart-like shape
+      cx.fillStyle=leaf;
+      cx.beginPath();
+      cx.moveTo(0,0);
+      cx.bezierCurveTo(w*.1,-h*.02,w*.22,-h*.1,w*.18*side,-h*.14*1.4);
+      cx.bezierCurveTo(w*.04*side,-h*.04,0,h*.02,0,0); cx.fill();
+      // Vein
+      cx.strokeStyle='rgba(255,255,255,0.25)'; cx.lineWidth=1.5;
+      cx.beginPath(); cx.moveTo(0,0); cx.lineTo(w*.13*side,-h*.1); cx.stroke();
+      // Cute round tip
+      cx.fillStyle='rgba(255,255,255,0.2)'; cx.beginPath(); cx.arc(w*.14*side,-h*.12,w*.018,0,Math.PI*2); cx.fill();
+      cx.restore();
+    }
+  });
+  // Base with cute root puff
+  cx.fillStyle='rgba(30,80,28,0.75)';
+  cx.beginPath(); cx.ellipse(0,h*.49,w*.3,h*.04,0,0,Math.PI*2); cx.fill();
+  // Tiny flower at top of center stem
+  const fp=[0,-h*.48];
+  cx.fillStyle='#ffee44';
+  for(let p=0;p<6;p++){
+    const pa=p/6*Math.PI*2;
+    cx.beginPath(); cx.arc(fp[0]+Math.cos(pa)*w*.04,fp[1]+Math.sin(pa)*h*.04,w*.025,0,Math.PI*2); cx.fill();
+  }
+  cx.fillStyle='#ff8822'; cx.beginPath(); cx.arc(fp[0],fp[1],w*.026,0,Math.PI*2); cx.fill();
+  cx.fillStyle='#ffcc00'; cx.beginPath(); cx.arc(fp[0],fp[1],w*.016,0,Math.PI*2); cx.fill();
+}
+
+
+// ═══════════════════════════════════════════
+//  PROP CATALOGUE
+// ═══════════════════════════════════════════
+const PROPS = [
+  // Original-style fun ornaments
+  { id:'coconutHut',   draw:drawCoconutHut,    w:110, h:130, shape:'rect',   mass:2.0, rest:.3, fric:.65 },
+  { id:'stoneIdol',    draw:drawStoneIdol,     w: 72, h:145, shape:'rect',   mass:2.8, rest:.25, fric:.7  },
+  { id:'templeGate',   draw:drawTempleGate,    w:150, h:130, shape:'rect',   mass:3.5, rest:.25, fric:.7  },
+  { id:'shipwreck',    draw:drawShipwreck,     w:160, h:120, shape:'rect',   mass:3.0, rest:.3,  fric:.65 },
+  { id:'coralReef',    draw:drawCoralReef,     w:140, h:110, shape:'rect',   mass:1.5, rest:.4,  fric:.55 },
+  { id:'waterfallCliff',draw:drawWaterfallCliff,w:130,h:140, shape:'rect',   mass:3.2, rest:.25, fric:.7  },
+  { id:'pirateChest',  draw:drawPirateChest,   w: 95, h: 90, shape:'rect',   mass:2.2, rest:.3,  fric:.65 },
+  // Nature pieces
+  { id:'driftwood_l',  draw:drawDriftwoodLog,  w:175, h: 58, shape:'rect',   mass:2.0, rest:.3,  fric:.75 },
+  { id:'driftwood_m',  draw:drawDriftwoodLog,  w:125, h: 44, shape:'rect',   mass:1.4, rest:.3,  fric:.75 },
+  { id:'rockCluster',  draw:drawRockCluster,   w: 95, h: 90, shape:'circle', mass:3.5, rest:.25, fric:.8  },
+  { id:'rock_l',       draw:drawRockCluster,   w: 75, h: 72, shape:'circle', mass:2.5, rest:.28, fric:.78 },
+  { id:'rock_m', draw:(cx,w,h)=>{ // cute small pebble with tiny face
+    const g=cx.createRadialGradient(-w*.12,-h*.14,0,0,0,w*.52);
+    g.addColorStop(0,'#9898b0');g.addColorStop(.5,'#72728a');g.addColorStop(1,'#484858');
+    cx.fillStyle=g; cx.beginPath(); cx.ellipse(0,0,w*.48,h*.44,0,0,Math.PI*2); cx.fill();
+    cx.strokeStyle='rgba(200,200,220,0.15)'; cx.lineWidth=3; cx.stroke();
+    cx.save(); cx.clip();
+    cx.fillStyle='rgba(230,230,250,0.22)'; cx.beginPath(); cx.ellipse(-w*.1,-h*.16,w*.16,h*.09,-0.4,0,Math.PI*2); cx.fill();
+    cx.restore();
+    // tiny sleepy face
+    cx.strokeStyle='#3a3a52'; cx.lineWidth=2; cx.lineCap='round';
+    cx.beginPath(); cx.arc(-w*.15,h*.04,w*.06,Math.PI+0.4,Math.PI*2-0.4); cx.stroke();
+    cx.beginPath(); cx.arc(w*.15,h*.04,w*.06,Math.PI+0.4,Math.PI*2-0.4); cx.stroke();
+    cx.beginPath(); cx.arc(0,h*.14,w*.07,0.15,Math.PI-0.15); cx.stroke();
+    cuteBlush(cx,-w*.28,h*.08,w*.07); cuteBlush(cx,w*.28,h*.08,w*.07);
+  }, w:52,h:48, shape:'circle', mass:1.5, rest:.32, fric:.75 },
+  { id:'tallPlant_g', draw:drawTallPlant, w:55, h:155, shape:'rect', mass:0.25, rest:.65, fric:.3 },
+  { id:'tallPlant_r', draw:(cx,w,h)=>{
+    // Cute red/pink plant — same structure as green but warm palette
+    const stems=[
+      {pts:[[-w*.18,h*.5],[-w*.22,h*.15],[-w*.12,-h*.15],[-w*.18,-h*.42]],col:'#c02848',leaf:'#e83868'},
+      {pts:[[0,h*.5],[w*.04,h*.1],[-w*.06,-h*.18],[0,-h*.48]],col:'#d03050',leaf:'#f04870'},
+      {pts:[[w*.16,h*.5],[w*.18,h*.12],[w*.1,-h*.16],[w*.16,-h*.44]],col:'#b82040',leaf:'#dc3860'},
+    ];
+    stems.forEach(({pts,col,leaf})=>{
+      cx.strokeStyle=col; cx.lineWidth=w*.12; cx.lineCap='round'; cx.lineJoin='round';
+      cx.beginPath(); pts.forEach(([x,y],i)=>i?cx.lineTo(x,y):cx.moveTo(x,y)); cx.stroke();
+      for(let i=1;i<pts.length;i++){
+        const [sx,sy]=pts[i], side=(i%2)?1:-1;
+        cx.save(); cx.translate(sx,sy); cx.rotate(side*0.65);
+        cx.fillStyle=leaf; cx.beginPath(); cx.moveTo(0,0);
+        cx.bezierCurveTo(w*.1,-h*.02,w*.22,-h*.1,w*.18*side,-h*.14*1.4);
+        cx.bezierCurveTo(w*.04*side,-h*.04,0,h*.02,0,0); cx.fill();
+        cx.strokeStyle='rgba(255,220,220,0.25)'; cx.lineWidth=1.5;
+        cx.beginPath(); cx.moveTo(0,0); cx.lineTo(w*.13*side,-h*.1); cx.stroke();
+        cx.fillStyle='rgba(255,255,255,0.2)'; cx.beginPath(); cx.arc(w*.14*side,-h*.12,w*.018,0,Math.PI*2); cx.fill();
+        cx.restore();
+      }
+    });
+    cx.fillStyle='rgba(80,10,25,0.7)'; cx.beginPath(); cx.ellipse(0,h*.49,w*.28,h*.04,0,0,Math.PI*2); cx.fill();
+    // Pink flower at top
+    const fp=[0,-h*.48];
+    cx.fillStyle='#ff88cc';
+    for(let p=0;p<6;p++){const pa=p/6*Math.PI*2; cx.beginPath(); cx.arc(fp[0]+Math.cos(pa)*w*.04,fp[1]+Math.sin(pa)*h*.04,w*.025,0,Math.PI*2); cx.fill();}
+    cx.fillStyle='#ff4488'; cx.beginPath(); cx.arc(fp[0],fp[1],w*.026,0,Math.PI*2); cx.fill();
+    cx.fillStyle='#ffaadd'; cx.beginPath(); cx.arc(fp[0],fp[1],w*.014,0,Math.PI*2); cx.fill();
+  }, w:50,h:148, shape:'rect', mass:0.25, rest:.65, fric:.3 },
+];
+
+// Which to spawn (and count)
+const SPAWN = [
+  'coconutHut','stoneIdol','templeGate','shipwreck','coralReef','waterfallCliff','pirateChest',
+  'driftwood_l','driftwood_m','rockCluster','rock_l','rock_m','rock_m',
+  'tallPlant_g','tallPlant_g','tallPlant_r',
+];
+
+// ═══════════════════════════════════════════
+//  PHYSICS
+// ═══════════════════════════════════════════
+let bodies=[], walls=[];
+function buildWalls(){
+  walls.forEach(w=>World.remove(engine.world,w));
+  const T=100;
+  walls=[
+    Bodies.rectangle(W/2,H+T/2,W+T*4,T,{isStatic:true,friction:.8,restitution:.2}),
+    Bodies.rectangle(W/2,-T/2,W+T*4,T,{isStatic:true,friction:.5,restitution:.1}),
+    Bodies.rectangle(-T/2,H/2,T,H+T*4,{isStatic:true,friction:.7,restitution:.3}),
+    Bodies.rectangle(W+T/2,H/2,T,H+T*4,{isStatic:true,friction:.7,restitution:.3}),
+  ];
+  World.add(engine.world,walls);
+}
+
+function spawnBodies(){
+  bodies.forEach(b=>World.remove(engine.world,b));
+  bodies=[];
+  const sc=Math.min(W/440,1.5);
+  SPAWN.forEach((id,i)=>{
+    const def=PROPS.find(p=>p.id===id); if(!def)return;
+    const pw=def.w*sc, ph=def.h*sc;
+    // Drop from just below screen, random X
+    const sx=W*0.08+Math.random()*W*0.84;
+    const sy=H+ph*(0.5+Math.random()*0.6)+i*ph*0.2;
+    const opts={restitution:def.rest,friction:def.fric,frictionAir:0.022,density:def.mass*0.002,angle:(Math.random()-.5)*0.5};
+    let b;
+    if(def.shape==='circle') b=Bodies.circle(sx,sy,Math.min(pw,ph)*0.46,opts);
+    else b=Bodies.rectangle(sx,sy,pw*0.84,ph*0.7,opts);
+    b.propDef=def; b.propW=pw; b.propH=ph;
+    bodies.push(b);
+  });
+  World.add(engine.world,bodies);
+}
+
+// Magnet
+let magnetActive=false,magnetX=0,magnetY=0;
+Events.on(engine,'beforeUpdate',()=>{
+  if(!magnetActive)return;
+  bodies.forEach(b=>{
+    const dx=magnetX-b.position.x,dy=magnetY-b.position.y;
+    const d=Math.sqrt(dx*dx+dy*dy)+1;
+    Body.applyForce(b,b.position,{x:(dx/d)*0.028*b.mass,y:(dy/d)*0.028*b.mass});
+  });
+});
+
+// ═══════════════════════════════════════════
+//  BACKGROUND
+// ═══════════════════════════════════════════
+let tick=0;
+const bgBubbles=Array.from({length:16},()=>({x:Math.random(),y:Math.random(),r:3+Math.random()*8,speed:0.0004+Math.random()*.0006,wobble:Math.random()*Math.PI*2}));
+
+function drawBg(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#081e32'); g.addColorStop(.45,'#061628'); g.addColorStop(.85,'#04101c'); g.addColorStop(1,'#020a12');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // Light shafts
+  for(let i=0;i<5;i++){
+    const lx=W*(.1+i*.2), la=Math.sin(tick*.0008+i*1.4)*0.07;
+    const lg=ctx.createLinearGradient(lx,0,lx+la*H,H*.65);
+    lg.addColorStop(0,'rgba(70,170,230,0.05)'); lg.addColorStop(1,'rgba(70,170,230,0)');
+    ctx.save(); ctx.translate(lx,0); ctx.rotate(la);
+    ctx.fillStyle=lg; ctx.fillRect(-W*.04,0,W*.08,H*.65);
+    ctx.restore();
+  }
+  // Sandy bottom
+  const sb=ctx.createLinearGradient(0,H*.83,0,H);
+  sb.addColorStop(0,'rgba(68,52,30,0)'); sb.addColorStop(.3,'rgba(80,62,36,0.9)'); sb.addColorStop(1,'rgba(52,38,20,1)');
+  ctx.fillStyle=sb; ctx.fillRect(0,H*.83,W,H*.17);
+  // Sand ripples
+  ctx.save(); ctx.globalAlpha=0.1;
+  for(let i=0;i<6;i++){
+    const ry=H*(.86+i*.023);
+    ctx.strokeStyle='rgba(140,108,65,0.8)'; ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(0,ry); ctx.bezierCurveTo(W*.25,ry-3,W*.5,ry+3,W*.75,ry-2); ctx.lineTo(W,ry); ctx.stroke();
+  }
+  ctx.globalAlpha=1; ctx.restore();
+  // Bubbles
+  bgBubbles.forEach(b=>{
+    b.y-=b.speed; b.wobble+=0.018;
+    if(b.y<-.06){b.y=1.06;b.x=Math.random();}
+    const bx=W*(b.x+Math.sin(b.wobble)*.018),by=H*b.y;
+    const bg2=ctx.createRadialGradient(bx-b.r*.3,by-b.r*.3,0,bx,by,b.r);
+    bg2.addColorStop(0,'rgba(130,200,255,0.12)'); bg2.addColorStop(1,'rgba(30,110,170,0.03)');
+    ctx.fillStyle=bg2; ctx.beginPath(); ctx.arc(bx,by,b.r,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='rgba(70,170,230,0.2)'; ctx.lineWidth=.9;
+    ctx.beginPath(); ctx.arc(bx,by,b.r,0,Math.PI*2); ctx.stroke();
+  });
+  tick++;
+}
+
+// ═══════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════
+function drawBodies(){
+  bodies.forEach(b=>{
+    const {x,y}=b.position, ang=b.angle;
+    const def=b.propDef, pw=b.propW, ph=b.propH;
+    ctx.save(); ctx.translate(x,y);
+    // Drop shadow
+    ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=14; ctx.shadowOffsetY=5;
+    ctx.save(); ctx.rotate(ang); def.draw(ctx,pw,ph); ctx.restore();
+    ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+    ctx.restore();
+  });
+}
+
+function drawMagnetFX(){
+  if(!magnetActive)return;
+  const g=ctx.createRadialGradient(magnetX,magnetY,22,magnetX,magnetY,55);
+  g.addColorStop(0,'rgba(0,195,255,0.35)'); g.addColorStop(1,'rgba(0,195,255,0)');
+  ctx.beginPath(); ctx.arc(magnetX,magnetY,55,0,Math.PI*2); ctx.fillStyle=g; ctx.fill();
+  ctx.beginPath(); ctx.arc(magnetX,magnetY,22,0,Math.PI*2);
+  ctx.strokeStyle='rgba(0,220,255,0.72)'; ctx.lineWidth=1.8; ctx.stroke();
+}
+
+(function loop(){
+  requestAnimationFrame(loop);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  drawBg(); drawBodies(); drawMagnetFX();
+})();
+
+// ═══════════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════════
+let gyroOn=false,gyroAdded=false;
+function enableGyro(){
+  if(!gyroAdded){
+    gyroAdded=true;
+    window.addEventListener('devicemotion',e=>{
+      if(!gyroOn)return;
+      const g=e.accelerationIncludingGravity; if(!g)return;
+      engine.gravity.x=g.x/9.8; engine.gravity.y=-g.y/9.8;
+    });
+  }
+  gyroOn=true;
+  document.getElementById('gyroBtn').classList.add('on');
+  document.getElementById('gyroBtn').textContent='🌀';
+  setBadge('🌀 陀螺仪 · 倾斜飘动');
+}
+function disableGyro(){
+  gyroOn=false;
+  document.getElementById('gyroBtn').classList.remove('on');
+  document.getElementById('gyroBtn').textContent='📱';
+  engine.gravity.x=0; engine.gravity.y=1;
+  setBadge('触摸聚拢 · 摇晃散开');
+}
+
+document.getElementById('gyroBtn').addEventListener('click',async()=>{
+  if(gyroOn){disableGyro();return;}
+  if((typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function')||
+     (typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function')){
+    document.getElementById('gyro-prompt').classList.add('show');
+  } else { enableGyro(); }
+});
+document.getElementById('gyroAllowBtn').addEventListener('click',async()=>{
+  document.getElementById('gyro-prompt').classList.remove('show');
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function')
+      await DeviceOrientationEvent.requestPermission();
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function')
+      await DeviceMotionEvent.requestPermission();
+  }catch(e){}
+  enableGyro();
+});
+document.getElementById('gyroSkipBtn').addEventListener('click',()=>document.getElementById('gyro-prompt').classList.remove('show'));
+
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  engine.gravity.x=0; engine.gravity.y=1;
+  spawnBodies(); setBadge('重置 ✨');
+  setTimeout(()=>setBadge('触摸聚拢 · 摇晃散开'),1500);
+});
+
+function getPos(e){const s=e.touches?e.touches[0]:e;return{x:s.clientX,y:s.clientY};}
+document.addEventListener('touchstart',e=>{
+  if(e.target.closest('#ui,#gyro-prompt'))return;
+  const p=getPos(e); magnetActive=true; magnetX=p.x; magnetY=p.y; setBadge('🌊 水流中');
+},{passive:true});
+document.addEventListener('touchmove',e=>{if(!magnetActive)return;const p=getPos(e);magnetX=p.x;magnetY=p.y;},{passive:true});
+document.addEventListener('touchend',()=>{magnetActive=false;setBadge(gyroOn?'🌀 陀螺仪 · 倾斜飘动':'触摸聚拢 · 摇晃散开');},{passive:true});
+document.addEventListener('mousedown',e=>{if(e.target.closest('#ui,#gyro-prompt'))return;magnetActive=true;const p=getPos(e);magnetX=p.x;magnetY=p.y;setBadge('🌊 水流中');});
+document.addEventListener('mousemove',e=>{if(!magnetActive)return;const p=getPos(e);magnetX=p.x;magnetY=p.y;});
+document.addEventListener('mouseup',()=>{magnetActive=false;setBadge(gyroOn?'🌀 陀螺仪 · 倾斜飘动':'触摸聚拢 · 摇晃散开');});
+
+// Shake
+let lastAcc={x:0,y:0,z:0},shakeN=0,lastShakeT=0;
+window.addEventListener('devicemotion',e=>{
+  const a=e.accelerationIncludingGravity;if(!a)return;
+  const dx=a.x-lastAcc.x,dy=a.y-lastAcc.y,dz=a.z-lastAcc.z;
+  const mag=Math.sqrt(dx*dx+dy*dy+dz*dz); lastAcc={x:a.x,y:a.y,z:a.z};
+  const now=Date.now();
+  if(mag>20&&now-lastShakeT>300){
+    lastShakeT=now; shakeN++;
+    if(shakeN>=2){
+      shakeN=0;
+      bodies.forEach(b=>{Body.applyForce(b,b.position,{x:(Math.random()-.5)*.14,y:(Math.random()-.5)*.14-.05});Body.setAngularVelocity(b,(Math.random()-.5)*1.2);});
+      setBadge('💥 散开！'); setTimeout(()=>setBadge(gyroOn?'🌀 陀螺仪 · 倾斜飘动':'触摸聚拢 · 摇晃散开'),1200);
+    }
+    setTimeout(()=>{shakeN=Math.max(0,shakeN-1);},800);
+  }
+});
+
+function setBadge(t){document.getElementById('badge').textContent=t;}
+window.addEventListener('resize',()=>{resize();buildWalls();});
+
+// Haptics
+Events.on(engine,'collisionStart',ev=>{
+  if(!navigator.vibrate)return;
+  ev.pairs.forEach(p=>{
+    if(!p.bodyA.propDef&&!p.bodyB.propDef)return;
+    const s=Math.min((p.bodyA.speed||0)+(p.bodyB.speed||0),5);
+    if(s>.5)navigator.vibrate(s>2.5?18:8);
+  });
+});
+
+buildWalls(); spawnBodies();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="230" fill="#0a1a3a"/>
+  <!-- Water gradient overlay -->
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a4a6a"/>
+      <stop offset="100%" stop-color="#051828"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1a8aaa" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#0a1a3a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#water)"/>
+  <rect width="1024" height="1024" rx="230" fill="url(#glow)"/>
+  <!-- Sandy bottom -->
+  <ellipse cx="512" cy="900" rx="420" ry="80" fill="#5a4020" opacity="0.6"/>
+  <!-- Coral -->
+  <path d="M200 780 Q190 720 200 660 Q185 600 200 550" stroke="#ff4a6a" stroke-width="22" stroke-linecap="round" fill="none"/>
+  <circle cx="200" cy="548" r="18" fill="#ff7090"/>
+  <path d="M200 660 Q160 640 145 600" stroke="#ff4a6a" stroke-width="16" stroke-linecap="round" fill="none"/>
+  <circle cx="143" cy="598" r="13" fill="#ff7090"/>
+  <!-- Driftwood -->
+  <path d="M580 820 Q620 760 660 720 Q700 680 760 650" stroke="#5a3010" stroke-width="28" stroke-linecap="round" fill="none"/>
+  <path d="M660 720 Q640 680 630 640" stroke="#4a2808" stroke-width="18" stroke-linecap="round" fill="none"/>
+  <!-- Green plant -->
+  <path d="M380 820 Q375 760 380 700" stroke="#2a8a40" stroke-width="16" stroke-linecap="round" fill="none"/>
+  <ellipse cx="355" cy="720" rx="38" ry="16" fill="#3aaa50" transform="rotate(-30 355 720)"/>
+  <ellipse cx="405" cy="740" rx="35" ry="15" fill="#32984a" transform="rotate(20 405 740)"/>
+  <ellipse cx="360" cy="700" rx="32" ry="14" fill="#44bb60" transform="rotate(-40 360 700)"/>
+  <!-- Fish 1 - orange -->
+  <ellipse cx="480" cy="380" rx="65" ry="40" fill="#ff7030"/>
+  <path d="M545 380 L590 340 L585 380 L590 420 Z" fill="#ee5020"/>
+  <circle cx="435" cy="368" r="12" fill="white"/>
+  <circle cx="438" cy="368" r="7" fill="#222"/>
+  <!-- Fish 2 - blue small -->
+  <ellipse cx="700" cy="500" rx="45" ry="28" fill="#3080ee"/>
+  <path d="M745 500 L778 474 L773 500 L778 526 Z" fill="#2060cc"/>
+  <circle cx="668" cy="491" r="9" fill="white"/>
+  <circle cx="670" cy="491" r="5" fill="#222"/>
+  <!-- Bubble string -->
+  <circle cx="300" cy="450" r="14" fill="none" stroke="rgba(100,200,255,0.6)" stroke-width="4"/>
+  <circle cx="295" cy="390" r="10" fill="none" stroke="rgba(100,200,255,0.5)" stroke-width="3"/>
+  <circle cx="305" cy="335" r="7" fill="none" stroke="rgba(100,200,255,0.4)" stroke-width="2.5"/>
+  <!-- Starfish -->
+  <polygon points="820,700 830,730 862,730 838,748 848,780 820,762 792,780 802,748 778,730 810,730" fill="#e85a20"/>
+  <!-- Light rays from top -->
+  <path d="M200 0 L240 300" stroke="rgba(100,220,255,0.08)" stroke-width="40"/>
+  <path d="M400 0 L430 250" stroke="rgba(100,220,255,0.06)" stroke-width="35"/>
+  <path d="M650 0 L620 280" stroke="rgba(100,220,255,0.07)" stroke-width="30"/>
+</svg>

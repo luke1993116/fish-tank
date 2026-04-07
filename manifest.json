@@ -1,0 +1,18 @@
+{
+  "name": "水族箱物理",
+  "short_name": "水族箱",
+  "description": "水族箱物理玩具 - 倾斜手机让摆件漂浮碰撞",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0a1a3a",
+  "theme_color": "#0a1a3a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
